@@ -9,7 +9,7 @@ A minimal LLM agent framework implementing the ReAct (Reason-Act-Observe) patter
 - **Error Handling**: Errors become part of the conversation, allowing LLMs to self-correct
 - **Tool System**: Type-safe tool calling with Pydantic validation
 - **Observability**: Console tracer and web-based debugger for monitoring agent execution
-- **Comprehensive Tests**: 107 tests covering unit and integration scenarios
+- **Comprehensive Tests**: 57 tests covering unit and integration scenarios
 
 ## Quick Start
 
