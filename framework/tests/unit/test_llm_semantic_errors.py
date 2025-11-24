@@ -7,7 +7,7 @@ not raised as exceptions. The agent can reason about them.
 from unittest.mock import Mock, patch
 
 from agentic.framework.llm import LLM
-from agentic.framework.messages import Message
+from agentic.framework.messages import ErrorCode, Message
 
 
 def test_content_filter_returns_rich_message():
@@ -28,7 +28,7 @@ def test_content_filter_returns_rich_message():
 
     # Should return Message with error_code (not raise!)
     assert isinstance(result, Message)
-    assert result.error_code == "content_filter"
+    assert result.error_code == ErrorCode.CONTENT_FILTER
     assert result.role == "assistant"
     assert "filter" in result.content.lower() or "blocked" in result.content.lower()
 
@@ -51,7 +51,7 @@ def test_empty_response_returns_rich_message():
 
     # Should return Message with error_code (not raise!)
     assert isinstance(result, Message)
-    assert result.error_code == "empty_response"
+    assert result.error_code == ErrorCode.EMPTY_RESPONSE
     assert result.role == "assistant"
     assert "empty" in result.content.lower()
 

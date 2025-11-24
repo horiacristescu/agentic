@@ -13,8 +13,7 @@ from agentic.framework.llm import LLM
 def clean_response(response: str) -> str:
     """Test helper: directly call the parser without creating a full agent."""
     llm = LLM(model_name="mock", api_key="fake")
-    agent = Agent(llm=llm, tools=[])
-    return agent._clean_markdown_response(response)
+    return llm._clean_markdown_response(response)
 
 
 # Valid baseline JSON (what we expect)

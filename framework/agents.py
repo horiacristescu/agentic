@@ -1,7 +1,19 @@
+"""Agent runtime implementing the ReAct (Reason-Act-Observe) loop.
+
+This module provides the Agent class which coordinates LLM reasoning with tool
+execution. The agent runs in a loop where the LLM:
+1. Reasons about the problem and decides what action to take
+2. Calls tools to execute actions
+3. Observes the results
+4. Repeats until reaching a conclusion or hitting iteration limits
+
+Errors are handled gracefully by adding them to the conversation history,
+allowing the LLM to see failures and adjust its approach accordingly.
+"""
+
 import json
-import re
+import logging
 import time
-from contextlib import suppress
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -105,11 +117,18 @@ class Agent:
 
     def _notify(self, event: str, **kwargs):
         """Notify all observers"""
+        logger = logging.getLogger(__name__)
         for observer in self.observers:
             method = getattr(observer, event, None)
             if method and callable(method):
-                with suppress(Exception):
+                try:
                     method(**kwargs)
+                except Exception as e:
+                    # Log but don't crash - observer failures shouldn't stop agent execution
+                    logger.warning(
+                        f"Observer {observer.__class__.__name__}.{event}() failed: {e}",
+                        exc_info=True,
+                    )
 
     def render_system_prompt(self) -> str:
         if not self.tools:
@@ -173,7 +192,10 @@ class Agent:
                 continue
 
             # Log this turn
-            assert agent_response.metadata is not None, "Expected metadata in successful response"
+            if agent_response.metadata is None:
+                raise MalformedResponseError(
+                    "Agent response missing metadata - this indicates a bug in response handling"
+                )
             self.messages.append(
                 Message(
                     role="assistant",
@@ -264,11 +286,8 @@ class Agent:
                     },
                 )
 
-            # Clean response
-            response_content = self._clean_markdown_response(response.content)
-
-            # Parse response
-            parsed = AgentResponse.model_validate_json(response_content)
+            # Parse response (already cleaned by LLM)
+            parsed = AgentResponse.model_validate_json(response.content)
 
             return Result(
                 value=parsed.result,
@@ -313,125 +332,6 @@ class Agent:
                 },
             )
         # No blanket except Exception - let unknown errors crash with traceback
-
-    def _convert_anthropic_format(self, response: str) -> str:
-        """
-        Convert Anthropic's <function_calls> XML format to our AgentResponse JSON.
-
-        Anthropic models often use:
-        Reasoning text here...
-        <function_calls>
-        [
-          {"id": "call_1", "tool": "tool_name", "args": {...}}
-        ]
-        </function_calls>
-        More text...
-
-        We convert this to:
-        {
-          "reasoning": "Reasoning text here...",
-          "tool_calls": [...],
-          "result": null,
-          "is_finished": false
-        }
-        """
-        # Extract function calls from XML tags
-        func_calls_match = re.search(
-            r"<function_calls>\s*(\[.*?\])\s*</function_calls>", response, flags=re.DOTALL
-        )
-
-        if func_calls_match:
-            # Extract reasoning (text before <function_calls>)
-            reasoning_text = response[: func_calls_match.start()].strip()
-            if not reasoning_text:
-                reasoning_text = "Calling tools to gather information."
-
-            # Parse the tool calls JSON
-            tool_calls_json = func_calls_match.group(1)
-
-            # Build AgentResponse format
-            agent_response = {
-                "reasoning": reasoning_text,
-                "tool_calls": json.loads(tool_calls_json),
-                "result": None,
-                "is_finished": False,
-            }
-
-            return json.dumps(agent_response)
-
-        # No Anthropic format detected, return original
-        return response
-
-    def _clean_markdown_response(self, response: str) -> str:
-        """
-        Extract clean JSON from LLM response, handling:
-        - Anthropic's <function_calls> XML format
-        - Markdown code blocks (```json ... ```)
-        - Common preambles (Assistant:, Here is:, etc.)
-        - Trailing characters after valid JSON
-        - Extra text before/after JSON
-        """
-        # First check for Anthropic XML format
-        converted = self._convert_anthropic_format(response)
-        if converted != response:
-            return converted
-
-        # Strip common preambles that models add before JSON
-        # Examples: "\n\nAssistant: ", "Here is the JSON:\n", etc.
-        preamble_patterns = [
-            r"^\s*Assistant:\s*",
-            r"^\s*Here\s+(?:is|are)\s+(?:the\s+)?(?:JSON|response|result)s?:?\s*",
-            r"^\s*Response:\s*",
-            r"^\s*Output:\s*",
-        ]
-        for pattern in preamble_patterns:
-            response = re.sub(pattern, "", response, flags=re.IGNORECASE)
-
-        # Then try to extract from markdown code block
-        matches = re.search(r"```(?:json)?\s*\n(.*?)\n```", response, flags=re.DOTALL)
-        if matches:
-            response = matches.group(1)
-
-        # Find the first { and extract balanced JSON
-        start_idx = response.find("{")
-        if start_idx == -1:
-            return response
-
-        # Extract JSON by balancing braces
-        brace_count = 0
-        in_string = False
-        escape_next = False
-
-        for i in range(start_idx, len(response)):
-            char = response[i]
-
-            # Handle string escapes
-            if escape_next:
-                escape_next = False
-                continue
-
-            if char == "\\":
-                escape_next = True
-                continue
-
-            # Track whether we're inside a string
-            if char == '"':
-                in_string = not in_string
-                continue
-
-            # Only count braces outside strings
-            if not in_string:
-                if char == "{":
-                    brace_count += 1
-                elif char == "}":
-                    brace_count -= 1
-
-                    # Found balanced JSON
-                    if brace_count == 0:
-                        return response[start_idx : i + 1]
-
-        # If we couldn't balance, return from start to end
-        return response[start_idx:]
 
     def _format_tool_success(self, tool_name: str, value: str) -> str:
         msg = f'Tool {tool_name} called, and the result is: "{value}"'
@@ -486,7 +386,10 @@ class Agent:
             tool_results.append(result)
 
             # Create individual tool message for each result (required for Anthropic)
-            assert result.metadata is not None, "Tool execution should always return metadata"
+            if result.metadata is None:
+                raise ValueError(
+                    f"Tool execution for {tool_call.tool} returned no metadata - this is a bug"
+                )
             content = (
                 result.value if result.status == ResultStatus.SUCCESS else result.error
             ) or "No result"

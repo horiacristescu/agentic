@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from agentic.framework.agents import Agent
 from agentic.framework.llm import LLM
-from agentic.framework.messages import Message, ResultStatus
+from agentic.framework.messages import ErrorCode, Message, ResultStatus
 
 
 def test_content_filter_error_added_to_conversation():
@@ -22,7 +22,7 @@ def test_content_filter_error_added_to_conversation():
         mock_call.return_value = Message(
             role="assistant",
             content="Content was blocked by safety filters",
-            error_code="content_filter",
+            error_code=ErrorCode.CONTENT_FILTER,
             timestamp=0.0,
             tokens_in=10,
             tokens_out=5,
@@ -35,7 +35,7 @@ def test_content_filter_error_added_to_conversation():
         assert result.status in [ResultStatus.ERROR, ResultStatus.MAX_TURNS_REACHED]
 
         # Error should be in conversation history
-        error_messages = [msg for msg in agent.messages if msg.error_code == "content_filter"]
+        error_messages = [msg for msg in agent.messages if msg.error_code == ErrorCode.CONTENT_FILTER]
         assert len(error_messages) > 0
 
 
@@ -49,7 +49,7 @@ def test_empty_response_error_added_to_conversation():
         mock_call.return_value = Message(
             role="assistant",
             content="Received empty response from API",
-            error_code="empty_response",
+            error_code=ErrorCode.EMPTY_RESPONSE,
             timestamp=0.0,
             tokens_in=10,
             tokens_out=0,
@@ -61,7 +61,7 @@ def test_empty_response_error_added_to_conversation():
         assert result.status in [ResultStatus.ERROR, ResultStatus.MAX_TURNS_REACHED]
 
         # Error should be in conversation
-        error_messages = [msg for msg in agent.messages if msg.error_code == "empty_response"]
+        error_messages = [msg for msg in agent.messages if msg.error_code == ErrorCode.EMPTY_RESPONSE]
         assert len(error_messages) > 0
 
 
@@ -75,7 +75,7 @@ def test_semantic_error_does_not_crash_agent():
         mock_call.return_value = Message(
             role="assistant",
             content="Content was blocked",
-            error_code="content_filter",
+            error_code=ErrorCode.CONTENT_FILTER,
             timestamp=0.0,
             tokens_in=10,
             tokens_out=5,

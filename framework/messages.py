@@ -25,16 +25,17 @@ class Result(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-ErrorCode = Literal[
-    "api_error",
-    "validation_error",
-    "execution_error",
-    "timeout",
-    "max_turns_reached",
-    "parse_error",
-    "content_filter",
-    "empty_response",
-]
+class ErrorCode(Enum):
+    """Error codes for tracking failure types in messages."""
+
+    API_ERROR = "api_error"
+    VALIDATION_ERROR = "validation_error"
+    EXECUTION_ERROR = "execution_error"
+    TIMEOUT = "timeout"
+    MAX_TURNS_REACHED = "max_turns_reached"
+    PARSE_ERROR = "parse_error"
+    CONTENT_FILTER = "content_filter"
+    EMPTY_RESPONSE = "empty_response"
 
 
 class Message(BaseModel):

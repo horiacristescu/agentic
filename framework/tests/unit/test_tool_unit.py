@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from agentic.framework.messages import Message
+from agentic.framework.messages import ErrorCode, Message
 from agentic.framework.tools import create_tool
 
 
@@ -35,7 +35,7 @@ def test_tool_with_wrong_dependencies():
 
     # Should return error Message, not raise
     assert isinstance(result, Message)
-    assert result.error_code == "execution_error"
+    assert result.error_code == ErrorCode.EXECUTION_ERROR
     assert "dependency mismatch" in result.content
 
 
@@ -47,7 +47,7 @@ def test_tool_with_no_dependencies():
     result = tool.run({"operation": "add", "x": 5, "y": 3})
 
     assert isinstance(result, Message)
-    assert result.content == "8"  # Integer result (calculator returns int when no decimal)
+    assert result.content == "8.0"  # Calculator returns float
     assert result.error_code is None
 
 
@@ -61,7 +61,7 @@ def test_tool_with_invalid_arguments():
 
     # Should return error Message (not crash!)
     assert isinstance(result, Message)
-    assert result.error_code == "validation_error"
+    assert result.error_code == ErrorCode.VALIDATION_ERROR
     assert "validation" in result.content.lower() or "required" in result.content.lower()
 
 
@@ -81,7 +81,7 @@ def test_tool_execution_raises_exception():
 
     # Should return error Message (not crash!)
     assert isinstance(result, Message)
-    assert result.error_code == "execution_error"
+    assert result.error_code == ErrorCode.EXECUTION_ERROR
     assert "Something went wrong!" in result.content
 
 

@@ -3,13 +3,13 @@ name = "agentic"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "flask>=3.1.2",
-    "openai>=2.8.0",
-    "pydantic>=2.12.4",
-    "pydantic-settings>=2.0.0",
-    "python-dotenv>=1.2.1",
+    "flask>=3.1.2,<4.0.0",
+    "openai>=2.8.0,<3.0.0",
+    "pydantic>=2.12.4,<3.0.0",
+    "pydantic-settings>=2.0.0,<3.0.0",
+    "python-dotenv>=1.2.1,<2.0.0",
 ]
 
 [tool.setuptools]
@@ -29,7 +29,7 @@ packages = ["agentic.framework", "agentic.agents", "agentic.observers", "agentic
 line-length = 100
 
 # Target Python version
-target-version = "py313"
+target-version = "py311"
 
 # Exclude directories
 exclude = [
@@ -84,3 +84,9 @@ known-first-party = ["agentic"]
 dev = [
     "pytest>=9.0.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["framework/tests", "agents"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

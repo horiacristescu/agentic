@@ -6,7 +6,7 @@ Validates that error messages contain the right information for agents to recove
 from pydantic import BaseModel
 
 from agentic.agents.calculator.tools import CalculatorTool
-from agentic.framework.messages import Message
+from agentic.framework.messages import ErrorCode, Message
 from agentic.framework.tools import create_tool
 
 
@@ -16,7 +16,7 @@ def test_missing_field_error_is_clear():
     result = tool.run({"x": 5, "y": 3})  # Missing 'operation'
 
     assert isinstance(result, Message)
-    assert result.error_code == "validation_error"
+    assert result.error_code == ErrorCode.VALIDATION_ERROR
     # Should mention the tool name
     assert "calculator" in result.content.lower()
     # Should mention the field name
@@ -31,7 +31,7 @@ def test_wrong_type_error_mentions_field_and_type():
     result = tool.run({"operation": "add", "x": "not_a_number", "y": 3})
 
     assert isinstance(result, Message)
-    assert result.error_code == "validation_error"
+    assert result.error_code == ErrorCode.VALIDATION_ERROR
     # Should mention the tool name
     assert "calculator" in result.content.lower()
     # Should mention the field name
@@ -46,7 +46,7 @@ def test_invalid_enum_shows_valid_options():
     result = tool.run({"operation": "power", "x": 2, "y": 3})
 
     assert isinstance(result, Message)
-    assert result.error_code == "validation_error"
+    assert result.error_code == ErrorCode.VALIDATION_ERROR
     # Should mention the field name
     assert "operation" in result.content.lower()
     # Should show valid options
@@ -62,7 +62,7 @@ def test_multiple_errors_lists_all_problems():
     result = tool.run({"operation": "invalid", "x": "bad", "y": "also_bad"})
 
     assert isinstance(result, Message)
-    assert result.error_code == "validation_error"
+    assert result.error_code == ErrorCode.VALIDATION_ERROR
     # Should mention all three problematic fields
     assert "operation" in result.content.lower()
     assert "'x'" in result.content.lower()
@@ -77,7 +77,7 @@ def test_empty_input_lists_all_required_fields():
     result = tool.run({})
 
     assert isinstance(result, Message)
-    assert result.error_code == "validation_error"
+    assert result.error_code == ErrorCode.VALIDATION_ERROR
     # Should mention all required fields
     assert "operation" in result.content.lower()
     assert "'x'" in result.content.lower()
@@ -92,7 +92,7 @@ def test_dependency_mismatch_mentions_tool_and_issue():
     result = tool.run({"operation": "add", "x": 5, "y": 3})
 
     assert isinstance(result, Message)
-    assert result.error_code == "execution_error"
+    assert result.error_code == ErrorCode.EXECUTION_ERROR
     # Should mention the tool name
     assert "calculator" in result.content.lower()
     # Should indicate dependency issue
@@ -114,7 +114,7 @@ def test_execution_error_includes_exception_message():
     result = tool.run({"value": 42})
 
     assert isinstance(result, Message)
-    assert result.error_code == "execution_error"
+    assert result.error_code == ErrorCode.EXECUTION_ERROR
     # Should include the custom error message
     assert "Custom error" in result.content or "database connection failed" in result.content
 
@@ -126,7 +126,7 @@ def test_success_has_no_error_code():
 
     assert isinstance(result, Message)
     assert result.error_code is None
-    assert result.content == "8"  # Integer result (calculator returns int when no decimal)
+    assert result.content == "8.0"  # Calculator returns float
 
 
 if __name__ == "__main__":

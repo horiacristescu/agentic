@@ -1,3 +1,16 @@
+"""LLM client interface with error handling and response normalization.
+
+This module wraps the OpenAI SDK (compatible with OpenRouter and similar providers)
+and provides:
+- Message format conversion between our internal format and API schemas
+- Response cleaning to handle markdown code blocks and formatting
+- Protocol conversion for different model response formats (Anthropic XML, etc.)
+- Error classification to distinguish transient failures from permanent errors
+
+The LLM class ensures the agent receives consistent Message objects regardless
+of which model or provider is being used.
+"""
+
 import json
 import time
 from typing import Any
@@ -20,7 +33,7 @@ from agentic.framework.errors import (
     PermissionError,
     TransientProviderError,
 )
-from agentic.framework.messages import Message
+from agentic.framework.messages import ErrorCode, Message
 
 
 class LLM:
@@ -105,7 +118,7 @@ class LLM:
                 return Message(
                     role="assistant",
                     content="Content was blocked by safety filters",
-                    error_code="content_filter",
+                    error_code=ErrorCode.CONTENT_FILTER,
                     timestamp=time.time(),
                     tokens_in=response.usage.prompt_tokens,
                     tokens_out=response.usage.completion_tokens,
@@ -117,7 +130,7 @@ class LLM:
                 return Message(
                     role="assistant",
                     content="Received empty response from API",
-                    error_code="empty_response",
+                    error_code=ErrorCode.EMPTY_RESPONSE,
                     timestamp=time.time(),
                     tokens_in=response.usage.prompt_tokens,
                     tokens_out=response.usage.completion_tokens,

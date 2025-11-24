@@ -1,10 +1,23 @@
+"""Tool system for agent actions with input validation.
+
+This module provides the Tool class which wraps Python functions with Pydantic
+schemas, enabling LLMs to call them safely. Each tool:
+- Declares its inputs using a Pydantic model
+- Validates arguments before execution
+- Returns results or errors as Message objects
+
+Validation happens before execution, ensuring malformed LLM outputs are caught
+early. Errors are returned as messages rather than raised as exceptions, allowing
+the agent to see what failed and attempt corrections.
+"""
+
 import json
 import time
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from agentic.framework.messages import Message
+from agentic.framework.messages import ErrorCode, Message
 
 
 class Tool:
@@ -43,7 +56,7 @@ class Tool:
                 role="tool",
                 content=error_msg,
                 name=self.name,
-                error_code="validation_error",
+                error_code=ErrorCode.VALIDATION_ERROR,
                 timestamp=time.time(),
             )
         except TypeError as e:
@@ -56,7 +69,7 @@ class Tool:
                 role="tool",
                 content=error_msg,
                 name=self.name,
-                error_code="execution_error",
+                error_code=ErrorCode.EXECUTION_ERROR,
                 timestamp=time.time(),
             )
         except Exception as e:
@@ -65,7 +78,7 @@ class Tool:
                 role="tool",
                 content=f"Tool execution error: {str(e)}",
                 name=self.name,
-                error_code="execution_error",
+                error_code=ErrorCode.EXECUTION_ERROR,
                 timestamp=time.time(),
             )
 
