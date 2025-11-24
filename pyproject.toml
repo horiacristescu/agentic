@@ -1,0 +1,86 @@
+[project]
+name = "agentic"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "flask>=3.1.2",
+    "openai>=2.8.0",
+    "pydantic>=2.12.4",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.2.1",
+]
+
+[tool.setuptools]
+packages = ["agentic.framework", "agentic.agents", "agentic.observers", "agentic.tools", "agentic.web_debugger"]
+
+[tool.setuptools.package-dir]
+"agentic.framework" = "framework"
+"agentic.agents" = "agents"
+"agentic.observers" = "observers"
+"agentic.tools" = "tools"
+"agentic.web_debugger" = "web_debugger"
+
+# ========== RUFF CONFIGURATION ==========
+
+[tool.ruff]
+# Line length (default is 88, like Black)
+line-length = 100
+
+# Target Python version
+target-version = "py313"
+
+# Exclude directories
+exclude = [
+    ".venv",
+    "__pycache__",
+    ".git",
+]
+
+# ========== FORMATTING RULES ==========
+[tool.ruff.format]
+# Quotes: "double" or "single"
+quote-style = "double"
+
+# Indentation: "space" or "tab"
+indent-style = "space"
+
+# Skip magic trailing comma (simpler formatting)
+skip-magic-trailing-comma = false
+
+# Line endings: "auto", "lf", or "crlf"
+line-ending = "auto"
+
+# ========== LINTING RULES ==========
+[tool.ruff.lint]
+# Enable these rule categories
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes (unused imports, undefined names)
+    "I",     # isort (import sorting)
+    "UP",    # pyupgrade (modernize Python syntax)
+    "B",     # flake8-bugbear (common bugs)
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+]
+
+# Allow autofix for these rules
+fixable = ["ALL"]
+unfixable = []
+
+# ========== IMPORT SORTING ==========
+[tool.ruff.lint.isort]
+# Group imports by type
+known-first-party = ["agentic"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+]
