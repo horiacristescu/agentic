@@ -1,7 +1,7 @@
 [project]
 name = "agentic"
 version = "0.1.0"
-description = "Add your description here"
+description = "A minimal LLM agent framework implementing the ReAct pattern with tool calling, error handling, and multi-model support"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

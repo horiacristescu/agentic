@@ -44,7 +44,7 @@ class Tool:
                 timestamp=time.time(),
             )
         except ValidationError as e:
-            # Invalid arguments from LLM - format errors clearly for the agent
+            # LLM gave us bad arguments - explain what's wrong so it can fix them
             errors = []
             for error in e.errors():
                 field = error["loc"][0] if error["loc"] else "unknown"

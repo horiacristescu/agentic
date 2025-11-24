@@ -82,6 +82,8 @@ After receiving tool results:
 
 
 class AgentResponse(BaseModel):
+    """The LLM's response format - think out loud, call tools, or finish with an answer."""
+
     reasoning: str = Field(
         description="Use this field to reason about the problem and the solution."
     )
@@ -116,7 +118,7 @@ class Agent:
         self.message_encourage_continue = "You can continue working on the task, or if you finished, set is_finished to true and result to the final answer."
 
     def _notify(self, event: str, **kwargs):
-        """Notify all observers"""
+        """Notify all observers - this is how we get debugging/logging without cluttering agent logic"""
         logger = logging.getLogger(__name__)
         for observer in self.observers:
             method = getattr(observer, event, None)
@@ -143,14 +145,13 @@ class Agent:
         """Main agent loop with max turns and full observability"""
 
         if reset or not self.messages:
-            # Fresh start
+            # Start fresh - the system prompt goes first to set the rules
             self.messages = [
                 Message(role="system", content=self.render_system_prompt(), timestamp=time.time())
             ]
             self.turn_count = 0
             self.tokens_used = 0
 
-        # Add new user input
         self.messages.append(Message(role="user", content=input, timestamp=time.time()))
 
         while self.turn_count < self.max_turns:
@@ -158,7 +159,6 @@ class Agent:
 
             self._notify("on_turn_start", turn=self.turn_count, messages=self.messages)
 
-            # Get agent response
             agent_response = self._get_agent_response(self.messages)
             if agent_response.status != ResultStatus.SUCCESS:
                 raw_response = (
@@ -172,9 +172,9 @@ class Agent:
                 )
                 return agent_response
 
-            # Handle semantic errors (Category C/D)
+            # Semantic errors (content filter, parse failures) go into the conversation
+            # so the LLM can see what went wrong and try a different approach
             if agent_response.metadata and agent_response.metadata.get("semantic_error"):
-                # Add error to conversation so agent can see it and retry
                 error_msg = Message(
                     role="assistant",
                     content=agent_response.metadata["error_message"],
@@ -188,10 +188,8 @@ class Agent:
                     error=f"Semantic error: {agent_response.metadata['error_code']}",
                     raw_response=agent_response.metadata.get("raw_response"),
                 )
-                # Continue loop - agent might recover on next turn
+                # Keep going - surprisingly, LLMs often self-correct after seeing their mistakes
                 continue
-
-            # Log this turn
             if agent_response.metadata is None:
                 raise MalformedResponseError(
                     "Agent response missing metadata - this indicates a bug in response handling"
@@ -206,13 +204,12 @@ class Agent:
             )
             self._notify("on_llm_response", turn=self.turn_count, response=self.messages[-1])
 
-            # Execute tools if any
             if agent_response.metadata and agent_response.metadata.get("tool_calls"):
                 tool_results = self._execute_tools(
                     agent_response.metadata["tool_calls"], self.messages, self.turn_count
                 )
 
-                # Check if any tools failed
+                # Tool failures don't stop execution - they become part of the conversation
                 failed_tools = [r for r in tool_results if r.status != ResultStatus.SUCCESS]
                 if failed_tools:
                     for failed in failed_tools:
@@ -220,7 +217,7 @@ class Agent:
                             "on_error", turn=self.turn_count, error=failed.error or "Unknown error"
                         )
 
-            # Check if finished
+            # The LLM signals completion by setting is_finished=true in its response
             if agent_response.metadata and agent_response.metadata.get("is_finished", False):
                 final_result = Result(
                     value=agent_response.metadata.get("result", ""),
@@ -286,9 +283,10 @@ class Agent:
                     },
                 )
 
-            # Parse response (already cleaned by LLM)
+            # Parse the JSON response (already cleaned by LLM layer)
             parsed = AgentResponse.model_validate_json(response.content)
 
+            # Wrap in Result so we can pass back metadata like tokens and reasoning
             return Result(
                 value=parsed.result,
                 status=ResultStatus.SUCCESS,
@@ -310,11 +308,11 @@ class Agent:
             MalformedResponseError,
             TransientProviderError,
         ):
-            # Category A & B errors - crash fast (caller decides retry for transient)
+            # Config and auth errors mean something is fundamentally broken - fail fast
             raise
         except (json.JSONDecodeError, ValidationError) as e:
-            # Catches JSON parsing errors and Pydantic validation errors
-            # Treat as recoverable semantic error - add to conversation so agent can retry
+            # LLM returned invalid JSON or wrong schema - treat as recoverable
+            # We'll add the error to the conversation and let the LLM try again
             return Result(
                 value=None,
                 status=ResultStatus.SUCCESS,  # Continue loop, don't stop

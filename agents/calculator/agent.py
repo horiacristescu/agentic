@@ -7,7 +7,6 @@ from agentic.observers.console_tracer import ConsoleTracer
 from .tools import CalculatorTool
 
 if __name__ == "__main__":
-    # llm init
     agent_config = get_config()
     llm = LLM(
         model_name=agent_config.model_name,
@@ -16,7 +15,6 @@ if __name__ == "__main__":
         max_tokens=agent_config.max_tokens,
     )
 
-    # agent init
     agent = Agent(
         llm=llm,
         tools=[create_tool(CalculatorTool)],

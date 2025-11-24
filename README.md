@@ -1,149 +1,169 @@
-# Simple Agent - Learning Project
+# Agentic
 
-> Building a minimal agent runtime from scratch to understand agent architecture best practices and improve Python engineering skills.
+A minimal LLM agent framework implementing the ReAct (Reason-Act-Observe) pattern. Built for learning and understanding how agents work under the hood.
 
-## 📚 Documentation Hub
+## Features
 
-**README is your control center.** Start here, navigate from here.
+- **ReAct Loop**: LLM reasons, calls tools, observes results, repeats
+- **Multi-Model Support**: Works with OpenAI, Anthropic, Google Gemini, xAI Grok via OpenRouter
+- **Error Handling**: Errors become part of the conversation, allowing LLMs to self-correct
+- **Tool System**: Type-safe tool calling with Pydantic validation
+- **Observability**: Console tracer and web-based debugger for monitoring agent execution
+- **Comprehensive Tests**: 107 tests covering unit and integration scenarios
 
-### Starting a New Session
+## Quick Start
 
-1. **Check `docs/TODO.md`** - What's next? Find the current task
-2. **Read `docs/PROGRESS.md`** - What happened last session? Get context
-3. **Build the feature** - Write code, make decisions
-4. **Update docs** - See "Where to Write" below
+### Installation
 
-### What not to do
-- You should never touch git, no committing, resetting, or any git operation. In a previous iteration an agent deleted 3 hours of work with a git reset command, let's avoid it from now on. This is a costly lesson.
+```bash
+# Clone the repository
+git clone https://github.com/horiacristescu/agentic.git
+cd agentic
 
-### Where to Write What
+# Create virtual environment and install dependencies
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -e .
+```
 
-**`README.md`** (you are here)
-- Project overview and quick start
-- High-level progress tracker
-- Key discoveries (major insights only)
-- Update: Major milestones only
+### Configuration
 
-**`docs/TODO.md`** 
-- Roadmap with all tasks and checkboxes
-- Session log entries (append after each session)
-- Update: Every session (check boxes + log entry)
+Create a `.env` file in the project root:
 
-**`docs/PROGRESS.md`**
-- Detailed session journal (what, why, how)
-- Design decisions and rationale
-- Update: Every session (new entry at top)
+```bash
+cp .env.example .env
+```
 
-**`docs/ARCHITECTURE.md`**
-- Design patterns and their rationale
-- System invariants and core abstractions
-- Update: When making architectural decisions
+Edit `.env` and add your OpenRouter API key:
 
-**`docs/SELF_ANALYSIS.md`**
-- Learning meta - skills, struggles, growth
-- Update: When reflecting on learning process
+```bash
+OPENROUTER_API_KEY=your_key_here
+OPENROUTER_MODEL=openai/gpt-4o-mini
+```
 
-### Quick Reference
+Get an API key at [openrouter.ai/keys](https://openrouter.ai/keys)
 
-- **What's next?** → `docs/TODO.md`
-- **What happened?** → `docs/PROGRESS.md`
-- **Why this way?** → `docs/ARCHITECTURE.md`
-- **How am I doing?** → `docs/SELF_ANALYSIS.md`
+### Run an Example
 
----
+```bash
+# Simple calculator agent
+python agents/calculator/agent.py
 
-## 🎯 Learning Goals
+# Weather agent (demonstrates error recovery)
+python agents/weather/agent.py
 
-**Primary Goals:**
-1. **Agent Architecture**: Understand production patterns by building from scratch
-2. **Engineering Python**: Move from sloppy to production-quality code
+# File navigator with web debugger
+python agents/file_navigator/agent.py
+```
 
-**Specific Objectives:**
-- Understand the ReAct loop (Reason → Act → Observe)
-- Implement tool calling with structured outputs
-- Build state management and trajectory tracking
-- Create an evaluation framework
-- Learn modern Python patterns, typing, and tooling
-- Discover why agents are hard through hands-on implementation
-
-## 🏗️ Architecture (To Be Built)
-
-### Core Components
-- **Agent Runtime**: The ReAct loop
-- **Tool System**: Function → Schema → Execution
-- **State Tracker**: Conversation history and trajectory
-- **Evaluator**: Test cases and scoring
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 agentic/
-├── README.md           # Project overview (you are here)
 ├── framework/          # Core agent framework
 │   ├── agents.py      # Agent runtime (ReAct loop)
-│   ├── messages.py    # Message types (Message, ToolCall, Result)
-│   ├── tools.py       # Tool system
-│   ├── llm.py         # LLM client abstraction
-│   ├── observers.py   # Observer protocol
-│   └── tests/         # Framework tests
-├── observers/         # Observer implementations
-│   ├── console_tracer.py  # Console logging with formatted output
-│   └── web_debugger.py    # Interactive web-based debugger
-├── tools/             # Tool implementations
-│   ├── calculator_tool.py
-│   └── weather_tool.py
+│   ├── llm.py         # LLM client with response cleaning
+│   ├── tools.py       # Tool system with validation
+│   ├── messages.py    # Message types and schemas
+│   ├── errors.py      # Error classification
+│   └── tests/         # 107 tests
 ├── agents/            # Example agents
-│   ├── calculator_agent.py
-│   ├── weather_agent.py
-│   └── debug_example.py   # Web debugger demo
-└── docs/              # Documentation
-    ├── SELF_ANALYSIS.md  # Learning progress & skills
-    ├── TODO.md           # Task roadmap
-    ├── PROGRESS.md       # Session journal
-    └── ARCHITECTURE.md   # Design decisions
+│   ├── calculator/    # Math operations
+│   ├── weather/       # API calls with error handling
+│   └── file_navigator/  # Filesystem operations
+├── observers/         # Debugging/monitoring
+│   └── console_tracer.py  # Formatted console output
+└── web_debugger/      # Interactive web UI
 ```
 
-## 🚀 How to Run
+## Core Concepts
+
+### The ReAct Loop
+
+1. **Reason**: LLM thinks about what to do next
+2. **Act**: Calls tools to gather information or take actions
+3. **Observe**: Sees the results and continues or finishes
+
+### Errors as Values
+
+Instead of crashing, errors are added to the conversation:
+
+```python
+# Tool fails → Error becomes a message → LLM sees it → Tries different approach
+result = tool.run(bad_input)  # Returns error message, doesn't raise
+# Agent reads error, adjusts strategy, succeeds on retry
+```
+
+This "errors as values" pattern enables surprisingly effective self-correction.
+
+### Multi-Model Protocol Conversion
+
+Different models return responses in different formats (OpenAI native tool calls, Anthropic XML, markdown-wrapped JSON). The framework normalizes everything to a consistent format.
+
+## Creating a Custom Agent
+
+```python
+from agentic.framework.agents import Agent
+from agentic.framework.llm import LLM
+from agentic.framework.tools import create_tool
+from agentic.observers.console_tracer import ConsoleTracer
+
+# Define your tool
+class MyTool(BaseModel):
+    query: str
+    
+    def execute(self) -> str:
+        return f"Result for: {self.query}"
+
+# Create agent
+llm = LLM(model_name="openai/gpt-4o-mini", api_key="...")
+agent = Agent(
+    llm=llm,
+    tools=[create_tool(MyTool)],
+    observers=[ConsoleTracer(verbose=True)]
+)
+
+# Run
+result = agent.run("Your task here")
+print(result.value)
+```
+
+## Testing
 
 ```bash
-# Activate virtual environment
-source activate.sh  # or: source .venv/bin/activate
+# Run all tests
+pytest
 
-# Run calculator agent
-python agents/calculator_agent.py
+# Run with coverage
+pytest --cov=framework
 
-# Run weather agent (error recovery demo)
-python agents/weather_agent.py
+# Run specific test file
+pytest framework/tests/unit/test_agents.py
 ```
 
-## 🚀 Current Status
+## Key Insights
 
-**Phase 1: Production Robustness** (in progress - error handling)
+### Why LLMs Self-Correct
 
-- Phase 0: Complete ✅
-- Phase 1: ~85% (building error taxonomy and testing)
-- Phases 2-6: Not started
+When a tool fails, the error message goes into the conversation history. The LLM sees its mistake in context and naturally tries a different approach. No explicit retry logic needed.
 
-*See `docs/TODO.md` for detailed roadmap and task breakdown*
+### Why Response Cleaning Matters
 
-## 💡 Key Discoveries
+Models often wrap JSON in markdown blocks (` ```json ... ``` `) or add preambles ("Here is the response:"). The framework strips these out automatically. This reduced parsing failures from ~40% to <5%.
 
-### Errors as Values Enable Self-Correction
-The agent naturally self-corrects from tool failures without explicit retry logic. By returning errors as `Result(status=ERROR, error="...")` instead of throwing exceptions, errors flow through the message pipeline. The LLM sees the error in context, reasons about it, and retries with corrections. This "errors as values" pattern (like Rust's `Result<T,E>`) makes failure recovery an emergent property of the ReAct loop.
+### Why Observers
 
-**Example:** When querying "temperature in Bucharest", the weather tool fails with "City not found. Use Country/City format". The agent reads this error, reasons about the required format, and retries with "Romania/Bucharest" successfully.
+Separating monitoring from agent logic keeps the code clean. Observers can format output, save trajectories, or launch web UIs without touching the core loop.
 
-### LLMs Need Constant Reminders for Structured Output
-Even with JSON schemas in the system prompt, LLMs frequently "forget" to return JSON when giving simple answers, responding in plain text instead. The solution: explicit rules with concrete examples at the top of the system prompt ("CRITICAL: You MUST ALWAYS respond with valid JSON...") plus robust JSON cleaning that handles trailing garbage. This reduced JSON parsing failures from ~40% to <5%.
+## Requirements
 
-### Observability is Critical for Agent Development
-Agents are non-deterministic and fail frequently. Raw JSON dumps are unreadable. The solution: multiple viewing modes. ConsoleTracer formats tool calls as Python signatures (`calculator(operation="add", x=2, y=1)`) for quick scanning. Web debugger provides timeline view with JSON/formatted toggle plus interactive chat that continues execution. Being able to "jump in" and chat with a partially-executed agent accelerates debugging 10x.
+- Python 3.11+
+- OpenRouter API key (supports all major LLM providers)
 
-## 🤔 Open Questions
+## License
 
-_Track what you're struggling with or curious about_
+MIT License - see [LICENSE](LICENSE) file for details.
 
-## 📊 Results
+## Contributing
 
-_Evaluation results and comparisons_
-
+This is a learning project, but contributions are welcome! Please open an issue to discuss changes before submitting a PR.

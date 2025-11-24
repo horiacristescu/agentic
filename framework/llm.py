@@ -79,8 +79,8 @@ class LLM:
             content = response.choices[0].message.content
             message_obj = response.choices[0].message
 
-            # Handle OpenAI native tool calling format
-            # Some models (Grok, GPT-4) use native tool_calls instead of JSON-in-content
+            # Some models (Grok, GPT-4) use OpenAI's native tool_calls format instead of
+            # putting JSON in the content. We normalize everything to JSON-in-content.
             if (
                 finish_reason == "tool_calls"
                 and hasattr(message_obj, "tool_calls")
@@ -136,7 +136,8 @@ class LLM:
                     tokens_out=response.usage.completion_tokens,
                 )
 
-            # Clean markdown/formatting from response
+            # Many models wrap JSON in markdown code blocks or add preambles like "Here is the response:"
+            # Clean these out so we get pure JSON
             cleaned_content = self._clean_markdown_response(content)
 
             # Normal successful response
@@ -149,16 +150,14 @@ class LLM:
             )
             return response_message
         except AuthenticationError as e:
-            # Category A: Authentication errors should crash fast
+            # Auth/config errors indicate setup problems - fail immediately so they get fixed
             raise AuthError(str(e)) from e
         except BadRequestError as e:
-            # Category A: Invalid model or bad configuration should crash fast
             raise InvalidModelError(str(e)) from e
         except PermissionDeniedError as e:
-            # Category A: Permission errors should crash fast
             raise PermissionError(str(e)) from e
         except (RateLimitError, InternalServerError, APIConnectionError, APITimeoutError) as e:
-            # Category B: Transient errors - SDK already retried, wrap and raise
+            # Network issues and rate limits - SDK already retried, so if we're here it's serious
             raise TransientProviderError(
                 message=str(e),
                 attempt_count=2,  # SDK default max_retries
@@ -242,12 +241,12 @@ class LLM:
         if matches:
             response = matches.group(1)
 
-        # Find the first { and extract balanced JSON
+        # Find where the JSON starts and ends by counting { and }
+        # This handles trailing garbage like "}\n\nHope this helps!"
         start_idx = response.find("{")
         if start_idx == -1:
             return response
 
-        # Extract JSON by balancing braces
         brace_count = 0
         in_string = False
         escape_next = False
@@ -255,7 +254,6 @@ class LLM:
         for i in range(start_idx, len(response)):
             char = response[i]
 
-            # Handle string escapes
             if escape_next:
                 escape_next = False
                 continue
@@ -264,12 +262,11 @@ class LLM:
                 escape_next = True
                 continue
 
-            # Track whether we're inside a string
             if char == '"':
                 in_string = not in_string
                 continue
 
-            # Only count braces outside strings
+            # Only count braces that aren't inside quotes
             if not in_string:
                 if char == "{":
                     brace_count += 1
