@@ -25,7 +25,7 @@ from agentic.framework.errors import (
     TransientProviderError,
 )
 from agentic.framework.llm import LLM
-from agentic.framework.messages import Message, Result, ResultStatus, ToolCall
+from agentic.framework.messages import ErrorCode, Message, Result, ResultStatus, ToolCall
 from agentic.framework.observers import AgentObserver
 from agentic.framework.tools import Tool
 
@@ -175,17 +175,47 @@ class Agent:
             # Semantic errors (content filter, parse failures) go into the conversation
             # so the LLM can see what went wrong and try a different approach
             if agent_response.metadata and agent_response.metadata.get("semantic_error"):
+                error_code = agent_response.metadata["error_code"]
+                error_message = agent_response.metadata["error_message"]
+
+                # Build detailed error string for observers
+                error_str = f"Semantic error: {error_code}"
+
+                # For parse errors, include detailed diagnostics
+                if error_code == ErrorCode.PARSE_ERROR and agent_response.metadata.get(
+                    "parse_error_details"
+                ):
+                    parse_details = agent_response.metadata["parse_error_details"]
+                    error_str += f" - {parse_details.get('error_type', 'Unknown')}: {parse_details.get('error_message', '')}"
+                    if parse_details.get("raw_response_length"):
+                        error_str += (
+                            f" | Raw response: {parse_details['raw_response_length']} chars"
+                        )
+                    if parse_details.get("json_error_line"):
+                        error_str += f" | JSON error at line {parse_details['json_error_line']}, col {parse_details.get('json_error_col', '?')}"
+                    if parse_details.get("raw_response_preview"):
+                        preview = parse_details["raw_response_preview"]
+                        if len(preview) > 100:
+                            preview = preview[:100] + "..."
+                        error_str += f" | Preview: {repr(preview)}"
+                elif error_message:
+                    # Include the detailed message (now includes diagnostics like finish_reason, tokens, etc.)
+                    error_str += f" - {error_message}"
+
                 error_msg = Message(
                     role="assistant",
-                    content=agent_response.metadata["error_message"],
-                    error_code=agent_response.metadata["error_code"],
+                    content=error_message,
+                    error_code=error_code,
                     timestamp=time.time(),
+                    metadata=agent_response.metadata.get(
+                        "metadata"
+                    ),  # Pass through diagnostic metadata
                 )
                 self.messages.append(error_msg)
                 self._notify(
                     "on_error",
                     turn=self.turn_count,
-                    error=f"Semantic error: {agent_response.metadata['error_code']}",
+                    error=error_str,
                     raw_response=agent_response.metadata.get("raw_response"),
                 )
                 # Keep going - surprisingly, LLMs often self-correct after seeing their mistakes
@@ -280,6 +310,7 @@ class Agent:
                         "tool_calls": None,
                         "reasoning": f"LLM returned error: {response.error_code}",
                         "result": None,
+                        "metadata": response.metadata,  # Pass through diagnostic metadata from LLM layer
                     },
                 )
 
@@ -313,20 +344,53 @@ class Agent:
         except (json.JSONDecodeError, ValidationError) as e:
             # LLM returned invalid JSON or wrong schema - treat as recoverable
             # We'll add the error to the conversation and let the LLM try again
+
+            # Build detailed error diagnostics
+            error_type = type(e).__name__
+            error_msg = str(e)
+
+            # Extract JSON parsing details if available
+            parse_details = {}
+            if isinstance(e, json.JSONDecodeError):
+                parse_details = {
+                    "json_error_line": getattr(e, "lineno", None),
+                    "json_error_col": getattr(e, "colno", None),
+                    "json_error_pos": getattr(e, "pos", None),
+                }
+
+            # Build comprehensive error message
+            raw_preview = raw_llm_response[:200] if raw_llm_response else "(no response)"
+            raw_length = len(raw_llm_response) if raw_llm_response else 0
+
+            error_details = (
+                f"Parse error: {error_type} - {error_msg}. "
+                f"Raw response length: {raw_length} chars, "
+                f"tokens_in={response.tokens_in if 'response' in locals() else 'unknown'}, "
+                f"tokens_out={response.tokens_out if 'response' in locals() else 'unknown'}. "
+                f"Raw preview: {repr(raw_preview)}"
+            )
+
             return Result(
                 value=None,
                 status=ResultStatus.SUCCESS,  # Continue loop, don't stop
                 error=None,
                 metadata={
                     "semantic_error": True,
-                    "error_code": "parse_error",
-                    "error_message": f"Invalid response format: {str(e)}\n\nPlease respond with valid JSON matching the required schema.",
-                    "tokens": 0,
+                    "error_code": ErrorCode.PARSE_ERROR,
+                    "error_message": f"Invalid response format: {error_msg}\n\nPlease respond with valid JSON matching the required schema.",
+                    "tokens": tokens if "tokens" in locals() else 0,
                     "raw_response": raw_llm_response,  # Store original LLM response, not cleaned version
                     "is_finished": False,
                     "tool_calls": None,
                     "reasoning": "Response parsing failed",
                     "result": None,
+                    "parse_error_details": {
+                        "error_type": error_type,
+                        "error_message": error_msg,
+                        "raw_response_length": raw_length,
+                        "raw_response_preview": raw_preview,
+                        **parse_details,
+                    },
                 },
             )
         # No blanket except Exception - let unknown errors crash with traceback

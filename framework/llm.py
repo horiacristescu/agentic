@@ -11,6 +11,7 @@ The LLM class ensures the agent receives consistent Message objects regardless
 of which model or provider is being used.
 """
 
+import contextlib
 import json
 import time
 from typing import Any
@@ -127,13 +128,26 @@ class LLM:
             # Empty response - API succeeded but returned no content
             # Note: After protocol conversion, content should not be empty if tool_calls were present
             if content is None or content.strip() == "":
+                # Build detailed error message with diagnostics
+                content_status = "None" if content is None else f"empty string (len={len(content)})"
+                error_details = (
+                    f"API call succeeded but returned empty content. "
+                    f"finish_reason={finish_reason}, content={content_status}, "
+                    f"tokens_in={response.usage.prompt_tokens}, tokens_out={response.usage.completion_tokens}"
+                )
                 return Message(
                     role="assistant",
-                    content="Received empty response from API",
+                    content=error_details,
                     error_code=ErrorCode.EMPTY_RESPONSE,
                     timestamp=time.time(),
                     tokens_in=response.usage.prompt_tokens,
                     tokens_out=response.usage.completion_tokens,
+                    metadata={
+                        "finish_reason": finish_reason,
+                        "content_was_none": content is None,
+                        "content_length": len(content) if content else 0,
+                        "raw_content_repr": repr(content),
+                    },
                 )
 
             # Many models wrap JSON in markdown code blocks or add preambles like "Here is the response:"
@@ -168,6 +182,90 @@ class LLM:
             # Category A: Response structure violation - re-raise (don't catch)
             raise
         # No blanket except Exception - let unknown errors crash with traceback
+
+    def _convert_xml_tool_call_format(self, response: str) -> str:
+        """
+        Convert verbose XML tool call format to JSON.
+
+        Some models use this verbose XML format:
+        <tool_call>
+        <function=calculator>
+        <parameter=operation>add</parameter>
+        <parameter=x>5022</parameter>
+        <parameter=y>11075</parameter>
+        </function>
+        </tool_call>
+
+        Converts to our standard JSON format.
+        """
+        import re
+
+        # Find all <tool_call> blocks
+        tool_call_pattern = r"<tool_call>(.*?)</tool_call>"
+        tool_calls = re.findall(tool_call_pattern, response, flags=re.DOTALL)
+
+        if not tool_calls:
+            return response
+
+        # Extract reasoning (text before first <tool_call>)
+        first_tool_call_match = re.search(r"<tool_call>", response)
+        if first_tool_call_match:
+            reasoning_text = response[: first_tool_call_match.start()].strip()
+        else:
+            reasoning_text = ""
+
+        if not reasoning_text:
+            reasoning_text = "Calling tools to gather information."
+
+        # Parse each tool call
+        converted_tool_calls = []
+        for i, tool_call_block in enumerate(tool_calls):
+            # Extract function name from <function=name>
+            function_match = re.search(r"<function=([^>]+)>", tool_call_block)
+            if not function_match:
+                continue
+
+            tool_name = function_match.group(1).strip()
+
+            # Extract all parameters: <parameter=key>value</parameter>
+            param_pattern = r"<parameter=([^>]+)>(.*?)</parameter>"
+            params = re.findall(param_pattern, tool_call_block, flags=re.DOTALL)
+
+            # Build args dict, converting values to appropriate types
+            args = {}
+            for param_key, param_value in params:
+                key = param_key.strip()
+                value = param_value.strip()
+
+                # Try to convert to number if it looks like one
+                with contextlib.suppress(ValueError):
+                    value = float(value) if "." in value else int(value)
+
+                args[key] = value
+
+            # Generate a call ID
+            call_id = f"call_{i + 1}"
+
+            converted_tool_calls.append(
+                {
+                    "id": call_id,
+                    "tool": tool_name,
+                    "args": args,
+                }
+            )
+
+        if not converted_tool_calls:
+            return response
+
+        # Build response format
+        agent_response = {
+            "reasoning": reasoning_text,
+            "tool_calls": converted_tool_calls,
+            "result": None,
+            "is_finished": False,
+        }
+
+        return json.dumps(agent_response)
 
     def _convert_anthropic_format(self, response: str) -> str:
         """
@@ -213,6 +311,7 @@ class LLM:
     def _clean_markdown_response(self, response: str) -> str:
         """
         Extract clean JSON from LLM response, handling:
+        - Verbose XML tool call format (<tool_call><function=name>...</function></tool_call>)
         - Anthropic's <function_calls> XML format
         - Markdown code blocks (```json ... ```)
         - Common preambles (Assistant:, Here is:, etc.)
@@ -221,7 +320,12 @@ class LLM:
         """
         import re
 
-        # First check for Anthropic XML format
+        # First check for verbose XML tool call format
+        converted = self._convert_xml_tool_call_format(response)
+        if converted != response:
+            return converted
+
+        # Then check for Anthropic XML format
         converted = self._convert_anthropic_format(response)
         if converted != response:
             return converted

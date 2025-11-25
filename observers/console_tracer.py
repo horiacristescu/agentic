@@ -104,7 +104,12 @@ class ConsoleTracer:
         """Show errors with optional raw response"""
         print(f"\n❌ Error on turn {turn}: {error}")
 
-        if raw_response is not None and self.verbose:
+        # Always show raw response for parse errors (even if not verbose)
+        # For other errors, only show if verbose
+        is_parse_error = "parse_error" in error.lower()
+        should_show_raw = raw_response is not None and (self.verbose or is_parse_error)
+
+        if should_show_raw:
             print("\n📄 Raw Response:")
             print("-" * 70)
             print(f"Length: {len(raw_response)} chars")
