@@ -6,7 +6,6 @@ and ensures our parser can handle them all gracefully.
 
 import json
 
-from agentic.framework.agents import Agent
 from agentic.framework.llm import LLM
 
 
@@ -144,6 +143,116 @@ I need to use tools.
         parsed = json.loads(result)
         # Should add default reasoning
         assert "Calling tools" in parsed["reasoning"]
+
+
+class TestVerboseXMLToolCallFormat:
+    """Test verbose XML tool call format (<tool_call><function=name>...)."""
+
+    def test_single_tool_call(self):
+        """Single tool call with parameters."""
+        response = """
+<tool_call>
+<function=calculator>
+<parameter=operation>
+add
+</parameter>
+<parameter=x>
+5022
+</parameter>
+<parameter=y>
+11075
+</parameter>
+</function>
+</tool_call>
+"""
+        result = clean_response(response)
+        parsed = json.loads(result)
+        assert len(parsed["tool_calls"]) == 1
+        assert parsed["tool_calls"][0]["tool"] == "calculator"
+        assert parsed["tool_calls"][0]["args"]["operation"] == "add"
+        assert parsed["tool_calls"][0]["args"]["x"] == 5022
+        assert parsed["tool_calls"][0]["args"]["y"] == 11075
+        assert parsed["tool_calls"][0]["id"] == "call_1"
+
+    def test_multiple_tool_calls(self):
+        """Multiple tool calls in sequence."""
+        response = """
+<tool_call>
+<function=calculator>
+<parameter=operation>add</parameter>
+<parameter=x>5022</parameter>
+<parameter=y>11075</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=calculator>
+<parameter=operation>add</parameter>
+<parameter=x>14610</parameter>
+<parameter=y>8264</parameter>
+</function>
+</tool_call>
+"""
+        result = clean_response(response)
+        parsed = json.loads(result)
+        assert len(parsed["tool_calls"]) == 2
+        assert parsed["tool_calls"][0]["tool"] == "calculator"
+        assert parsed["tool_calls"][0]["args"]["x"] == 5022
+        assert parsed["tool_calls"][1]["tool"] == "calculator"
+        assert parsed["tool_calls"][1]["args"]["x"] == 14610
+        assert parsed["tool_calls"][0]["id"] == "call_1"
+        assert parsed["tool_calls"][1]["id"] == "call_2"
+
+    def test_with_reasoning_text(self):
+        """XML format with reasoning text before tool calls."""
+        response = """
+I need to calculate the sum of these numbers.
+<tool_call>
+<function=calculator>
+<parameter=operation>add</parameter>
+<parameter=x>5</parameter>
+<parameter=y>3</parameter>
+</function>
+</tool_call>
+"""
+        result = clean_response(response)
+        parsed = json.loads(result)
+        assert parsed["reasoning"] == "I need to calculate the sum of these numbers."
+        assert len(parsed["tool_calls"]) == 1
+
+    def test_numeric_parameter_conversion(self):
+        """Parameters should be converted to numbers when possible."""
+        response = """
+<tool_call>
+<function=calculator>
+<parameter=operation>multiply</parameter>
+<parameter=x>10</parameter>
+<parameter=y>3.5</parameter>
+</function>
+</tool_call>
+"""
+        result = clean_response(response)
+        parsed = json.loads(result)
+        args = parsed["tool_calls"][0]["args"]
+        assert args["x"] == 10  # int
+        assert args["y"] == 3.5  # float
+        assert args["operation"] == "multiply"  # string
+
+    def test_empty_reasoning(self):
+        """XML format with no reasoning text."""
+        response = """
+<tool_call>
+<function=calculator>
+<parameter=operation>add</parameter>
+<parameter=x>1</parameter>
+<parameter=y>2</parameter>
+</function>
+</tool_call>
+"""
+        result = clean_response(response)
+        parsed = json.loads(result)
+        # Should add default reasoning
+        assert "Calling tools" in parsed["reasoning"]
+        assert len(parsed["tool_calls"]) == 1
 
 
 class TestMalformedJSON:
