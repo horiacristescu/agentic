@@ -1,0 +1,8 @@
+Explore the framework/ directory and tell me:
+
+1. What are the main modules?
+2. Where is the Agent class defined?
+3. How many test files are there in total?
+
+Be thorough but concise in your exploration.
+

@@ -10,4 +10,3 @@ This package contains all evaluation tools for the file navigator agent:
 from agentic.agents.file_navigator.eval.validator import ToolCallValidator
 
 __all__ = ["ToolCallValidator"]
-
