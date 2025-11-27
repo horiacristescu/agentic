@@ -41,6 +41,7 @@ def run_eval(
     prompt_name: str = "v1_find_test_files",
     save_checkpoint: str | None = None,
     verbose: bool = True,
+    json_mode: bool = False,
 ) -> tuple[Result, Agent]:
     """Run evaluation on file navigation task.
 
@@ -50,6 +51,7 @@ def run_eval(
         prompt_name: Name of prompt to use (e.g., 'v1_find_test_files')
         save_checkpoint: Optional path to save checkpoint after run
         verbose: If True, print result summary
+        json_mode: If True, use API-level JSON mode (response_format)
 
     Returns:
         (Result, Agent) tuple - Agent contains messages for validation
@@ -65,6 +67,7 @@ def run_eval(
         api_key=agent_config.api_key,
         temperature=agent_config.temperature,
         max_tokens=1500,  # Override config - need sufficient tokens for complete responses
+        json_mode=json_mode,  # Enable API-level JSON mode if requested
     )
 
     # Agent init with mock tools

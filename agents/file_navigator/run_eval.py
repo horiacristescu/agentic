@@ -13,6 +13,7 @@ def run_and_validate(
     filesystem_name: str = "basic",
     prompt_name: str = "v1_find_test_files",
     save_trace: str | None = None,
+    json_mode: bool = False,
 ) -> dict:
     """Run agent and validate the trace.
 
@@ -21,6 +22,7 @@ def run_and_validate(
         filesystem_name: Filesystem scenario to test
         prompt_name: Prompt version to use
         save_trace: Optional path to save checkpoint
+        json_mode: If True, use API-level JSON mode
 
     Returns:
         dict with run info and validation results
@@ -30,6 +32,7 @@ def run_and_validate(
     print(f"  Model: {model_name or 'default'}")
     print(f"  Filesystem: {filesystem_name}")
     print(f"  Prompt: {prompt_name}")
+    print(f"  JSON Mode: {'enabled' if json_mode else 'disabled'}")
     print(f"{'=' * 70}\n")
 
     # Load filesystem for validation
@@ -42,6 +45,7 @@ def run_and_validate(
         prompt_name=prompt_name,
         save_checkpoint=save_trace,
         verbose=True,
+        json_mode=json_mode,
     )
 
     # Validate trace
@@ -99,13 +103,15 @@ def run_and_validate(
 
 
 if __name__ == "__main__":
-    # Usage: python run_eval.py [model_name] [checkpoint_path]
-    model = sys.argv[1] if len(sys.argv) > 1 else None
-    checkpoint = sys.argv[2] if len(sys.argv) > 2 else None
+    # Usage: python run_eval.py [model_name] [checkpoint_path] [--json-mode]
+    model = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else None
+    checkpoint = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
+    json_mode = "--json-mode" in sys.argv
 
     eval_result = run_and_validate(
         model_name=model,
         save_trace=checkpoint,
+        json_mode=json_mode,
     )
 
     # Print final pass/fail indicator
