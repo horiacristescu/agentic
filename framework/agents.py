@@ -14,6 +14,7 @@ allowing the LLM to see failures and adjust its approach accordingly.
 import json
 import logging
 import time
+from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -117,6 +118,38 @@ class Agent:
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.message_encourage_continue = "You can continue working on the task, or if you finished, set is_finished to true and result to the final answer."
 
+    def save_checkpoint(self, filepath: str | Path) -> None:
+        """Save agent state to file for resumption.
+        
+        Saves messages, turn count, and token usage so execution can resume
+        from this point. Useful for long-running tasks or recovering from crashes.
+        """
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        
+        checkpoint = {
+            "messages": [msg.model_dump(mode='json') for msg in self.messages],
+            "turn_count": self.turn_count,
+            "tokens_used": self.tokens_used,
+        }
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(checkpoint, f, indent=2)
+
+    def load_checkpoint(self, filepath: str | Path) -> None:
+        """Load agent state from checkpoint file.
+        
+        Restores messages, turn count, and token usage from a previous run.
+        After loading, run() can continue from where the checkpoint was saved.
+        """
+        with open(filepath, 'r', encoding='utf-8') as f:
+            checkpoint = json.load(f)
+        
+        # Restore messages from dict format
+        self.messages = [Message(**msg_dict) for msg_dict in checkpoint["messages"]]
+        self.turn_count = checkpoint["turn_count"]
+        self.tokens_used = checkpoint["tokens_used"]
+
     def _notify(self, event: str, **kwargs):
         """Notify all observers - this is how we get debugging/logging without cluttering agent logic"""
         logger = logging.getLogger(__name__)
@@ -141,9 +174,36 @@ class Agent:
         response_format = json.dumps(AgentResponse.model_json_schema(), indent=2)
         return self.system_prompt.format(tools=tool_descriptions, response_format=response_format)
 
-    def run(self, input: str, reset: bool = True) -> Result:
-        """Main agent loop with max turns and full observability"""
+    def run(
+        self,
+        input: str,
+        reset: bool = True,
+        checkpoint: str | Path | None = None,
+        auto_checkpoint: str | Path | None = None,
+    ) -> Result:
+        """Main agent loop with max turns and full observability.
+        
+        Args:
+            input: User task/query
+            reset: If True, start fresh; if False, continue from current state
+            checkpoint: If provided, load state from this file before starting
+            auto_checkpoint: If provided, save state to this file on any exception
+        """
+        # Load from checkpoint if provided
+        if checkpoint:
+            self.load_checkpoint(checkpoint)
+            reset = False  # Don't reset after loading checkpoint
 
+        try:
+            return self._run_loop(input, reset)
+        except Exception as e:
+            # Save state on any exception if auto_checkpoint enabled
+            if auto_checkpoint:
+                self.save_checkpoint(auto_checkpoint)
+            raise
+
+    def _run_loop(self, input: str, reset: bool) -> Result:
+        """Internal execution loop - separated for exception handling"""
         if reset or not self.messages:
             # Start fresh - the system prompt goes first to set the rules
             self.messages = [
