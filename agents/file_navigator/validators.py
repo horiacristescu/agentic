@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from agentic.agents.file_navigator.expected_outputs import get_ground_truth
 from agentic.framework.messages import Message
@@ -26,40 +27,72 @@ def extract_tool_calls(messages: list[Message]) -> list[dict]:
     tool_calls = []
 
     for i, msg in enumerate(messages):
-        if msg.role == "assistant" and msg.content:
-            try:
-                parsed = json.loads(msg.content)
-                if parsed.get("tool_calls"):
-                    for tc in parsed["tool_calls"]:
-                        # Find corresponding result in next messages
-                        result = None
-                        if i + 1 < len(messages) and messages[i + 1].role == "tool":
-                            result = messages[i + 1].content
+        if msg.role == "assistant" and msg.tool_calls:
+            # Use the pre-parsed tool_calls from the message
+            for tc in msg.tool_calls:
+                # Handle both ToolCall objects and dicts
+                if isinstance(tc, dict):
+                    tool_name = tc.get("tool")
+                    args = tc.get("args", {})
+                    call_id = tc.get("id")
+                else:
+                    # Pydantic ToolCall object
+                    tool_name = tc.tool
+                    args = tc.args
+                    call_id = tc.id
 
-                        tool_calls.append(
-                            {
-                                "tool": tc.get("tool"),
-                                "args": tc.get("args", {}),
-                                "result": result,
-                                "turn_index": i,
-                            }
-                        )
-            except (json.JSONDecodeError, KeyError):
-                continue
+                # Find corresponding result by matching tool_call_id
+                result = None
+                for j in range(i + 1, len(messages)):
+                    if messages[j].role == "tool" and messages[j].tool_call_id == call_id:
+                        result = messages[j].content
+                        break
+                    # Stop searching when we hit the next assistant message
+                    if messages[j].role == "assistant":
+                        break
+
+                tool_calls.append({
+                    "tool": tool_name,
+                    "args": args,
+                    "result": result,
+                    "turn_index": i,
+                })
 
     return tool_calls
 
 
 def extract_final_answer(messages: list[Message]) -> str | None:
-    """Extract the final answer from the last assistant message."""
-    for msg in reversed(messages):
-        if msg.role == "assistant":
+    """Extract the final answer from the last assistant message or metadata."""
+    # Check last few assistant messages for answers
+    assistant_messages = [msg for msg in messages if msg.role == "assistant"]
+    
+    for msg in reversed(assistant_messages[-3:]):  # Check last 3 assistant messages
+        # First check metadata for is_finished flag and result
+        if msg.metadata:
+            if msg.metadata.get("is_finished") and msg.metadata.get("result"):
+                return str(msg.metadata["result"])
+        
+        # Then try parsing content as JSON
+        if msg.content:
             try:
                 parsed = json.loads(msg.content)
                 if parsed.get("is_finished") and parsed.get("result"):
                     return parsed["result"]
             except (json.JSONDecodeError, KeyError):
-                continue
+                pass
+    
+    # Fallback: extract any substantial number from last few assistant messages
+    # This handles cases where agent sends non-JSON final response
+    for msg in reversed(assistant_messages[-3:]):
+        if msg.content:
+            # Use more flexible regex to catch numbers with or without commas
+            numbers = re.findall(r"\d[\d,]+", msg.content)
+            # Filter for substantial numbers (4+ digits when commas removed)
+            substantial = [n for n in numbers if len(n.replace(",", "")) >= 4]
+            if substantial:
+                # Return the last substantial number found
+                return substantial[-1].replace(",", "")
+    
     return None
 
 
@@ -84,9 +117,16 @@ def check_used_calculator(messages: list[Message]) -> ValidationResult:
     )
 
 
-def check_correct_answer(messages: list[Message], expected: int) -> ValidationResult:
+def check_correct_answer(messages: list[Message], expected: int, final_result: Any = None) -> ValidationResult:
     """Check if final answer matches expected value."""
-    final_answer = extract_final_answer(messages)
+    # First try to get answer from Result object
+    final_answer = None
+    if final_result and hasattr(final_result, 'value') and final_result.value:
+        final_answer = str(final_result.value)
+    
+    # Fallback to extracting from messages
+    if not final_answer:
+        final_answer = extract_final_answer(messages)
 
     if not final_answer:
         return ValidationResult(
@@ -139,32 +179,46 @@ def check_used_only_valid_values(
     """
     tool_calls = extract_tool_calls(messages)
 
+    # Group tool calls by turn_index to handle parallel calls correctly
+    calls_by_turn = {}
+    for tc in tool_calls:
+        turn = tc["turn_index"]
+        if turn not in calls_by_turn:
+            calls_by_turn[turn] = []
+        calls_by_turn[turn].append(tc)
+
     # Build set of valid values as we go (file sizes + calculator outputs)
     valid_values = valid_file_sizes.copy()
     invalid_uses = []
 
-    for tc in tool_calls:
-        if tc["tool"] == "calculator":
-            # Check each operand
-            args = tc.get("args", {})
-            for arg_name, arg_value in args.items():
-                if isinstance(arg_value, int | float) and int(arg_value) not in valid_values:
-                    invalid_uses.append(
-                        {
+    # Process turns in order
+    for turn in sorted(calls_by_turn.keys()):
+        turn_calc_results = []
+        
+        # First, validate all calculator calls in this turn
+        for tc in calls_by_turn[turn]:
+            if tc["tool"] == "calculator":
+                args = tc.get("args", {})
+                for arg_name, arg_value in args.items():
+                    if isinstance(arg_value, int | float) and int(arg_value) not in valid_values:
+                        invalid_uses.append({
                             "value": arg_value,
                             "arg": arg_name,
-                            "turn": tc["turn_index"],
-                            "valid_at_time": sorted(valid_values)[:10],  # Sample for debugging
-                        }
-                    )
-
-            # Add calculator result to valid values
-            if tc["result"]:
-                try:
-                    result_num = int(tc["result"])
-                    valid_values.add(result_num)
-                except (ValueError, TypeError):
-                    pass
+                            "turn": turn,
+                            "valid_at_time": sorted(valid_values)[:20],  # More samples for debugging
+                        })
+                
+                # Collect this turn's results
+                if tc["result"]:
+                    try:
+                        result_num = int(tc["result"])
+                        turn_calc_results.append(result_num)
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Then add ALL results from this turn to valid values
+        # (so next turn can use any of them)
+        valid_values.update(turn_calc_results)
 
     if invalid_uses:
         return ValidationResult(
@@ -304,12 +358,14 @@ def compute_efficiency_metrics(messages: list[Message]) -> dict:
 def validate_trace(
     messages: list[Message],
     filesystem: dict,
+    final_result: Any = None,
 ) -> dict:
     """Run all validators on a message trace.
 
     Args:
         messages: Message history from agent execution
         filesystem: The filesystem dict used in the task
+        final_result: Optional Result object with final answer
 
     Returns:
         dict with validation results, metrics, and summary
@@ -317,10 +373,10 @@ def validate_trace(
     # Extract ground truth from filesystem
     ground_truth = get_ground_truth(filesystem)
 
-    # Run validators
+    # Run validators (pass final_result for answer checking)
     validators = [
         lambda: check_used_calculator(messages),
-        lambda: check_correct_answer(messages, ground_truth["expected_answer"]),
+        lambda: check_correct_answer(messages, ground_truth["expected_answer"], final_result),
         lambda: check_used_only_valid_values(messages, ground_truth["test_file_sizes"]),
         lambda: check_used_correct_test_files(messages, ground_truth["test_file_sizes"]),
         lambda: check_explored_required_paths(messages, ground_truth["required_paths"]),

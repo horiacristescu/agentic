@@ -120,31 +120,31 @@ class Agent:
 
     def save_checkpoint(self, filepath: str | Path) -> None:
         """Save agent state to file for resumption.
-        
+
         Saves messages, turn count, and token usage so execution can resume
         from this point. Useful for long-running tasks or recovering from crashes.
         """
         filepath = Path(filepath)
         filepath.parent.mkdir(parents=True, exist_ok=True)
-        
+
         checkpoint = {
-            "messages": [msg.model_dump(mode='json') for msg in self.messages],
+            "messages": [msg.model_dump(mode="json") for msg in self.messages],
             "turn_count": self.turn_count,
             "tokens_used": self.tokens_used,
         }
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
+
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(checkpoint, f, indent=2)
 
     def load_checkpoint(self, filepath: str | Path) -> None:
         """Load agent state from checkpoint file.
-        
+
         Restores messages, turn count, and token usage from a previous run.
         After loading, run() can continue from where the checkpoint was saved.
         """
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding="utf-8") as f:
             checkpoint = json.load(f)
-        
+
         # Restore messages from dict format
         self.messages = [Message(**msg_dict) for msg_dict in checkpoint["messages"]]
         self.turn_count = checkpoint["turn_count"]
@@ -182,7 +182,7 @@ class Agent:
         auto_checkpoint: str | Path | None = None,
     ) -> Result:
         """Main agent loop with max turns and full observability.
-        
+
         Args:
             input: User task/query
             reset: If True, start fresh; if False, continue from current state
@@ -196,7 +196,7 @@ class Agent:
 
         try:
             return self._run_loop(input, reset)
-        except Exception as e:
+        except Exception:
             # Save state on any exception if auto_checkpoint enabled
             if auto_checkpoint:
                 self.save_checkpoint(auto_checkpoint)
@@ -217,7 +217,12 @@ class Agent:
         while self.turn_count < self.max_turns:
             self.turn_count += 1
 
-            self._notify("on_turn_start", turn=self.turn_count, messages=self.messages, model=self.llm.model_name)
+            self._notify(
+                "on_turn_start",
+                turn=self.turn_count,
+                messages=self.messages,
+                model=self.llm.model_name,
+            )
 
             agent_response = self._get_agent_response(self.messages)
             if agent_response.status != ResultStatus.SUCCESS:
@@ -262,9 +267,25 @@ class Agent:
                     # Include the detailed message (now includes diagnostics like finish_reason, tokens, etc.)
                     error_str += f" - {error_message}"
 
+                # For empty responses, send a helpful nudge with format reminder
+                if error_code == ErrorCode.EMPTY_RESPONSE:
+                    nudge_message = (
+                        "Your last response was empty. Please respond with valid JSON in this format:\n"
+                        "{\n"
+                        '  "reasoning": "your thinking about what to do next",\n'
+                        '  "tool_calls": [...] or null,\n'
+                        '  "is_finished": true or false,\n'
+                        '  "result": "final answer" or null\n'
+                        "}"
+                    )
+                    message_to_send = nudge_message
+                else:
+                    # For other errors (parse errors, content filter), send the detailed error
+                    message_to_send = error_message
+
                 error_msg = Message(
                     role="assistant",
-                    content=error_message,
+                    content=message_to_send,
                     error_code=error_code,
                     timestamp=time.time(),
                     metadata=agent_response.metadata.get(

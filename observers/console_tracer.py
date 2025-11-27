@@ -1,5 +1,4 @@
 import json
-from typing import Any
 
 from agentic.framework.messages import Message, ToolCall
 
@@ -27,7 +26,7 @@ class ConsoleTracer:
         # Print model name on first turn
         if turn == 1 and model:
             print(f"\n🤖 Model: {model}")
-        
+
         print(f"\n🔄 Turn {turn}")
 
         # On first turn, show system prompt and user input
@@ -56,28 +55,28 @@ class ConsoleTracer:
         reasoning = None
         if response.metadata and "reasoning" in response.metadata:
             reasoning = response.metadata["reasoning"]
-        elif hasattr(response, 'tool_calls') and not response.tool_calls:
+        elif hasattr(response, "tool_calls") and not response.tool_calls:
             # Try to parse content for reasoning if no tool_calls
             try:
                 parsed = json.loads(response.content)
                 reasoning = parsed.get("reasoning")
             except json.JSONDecodeError:
                 pass
-        
+
         if self.verbose and reasoning:
             print("\n💭 Agent Reasoning:")
             if len(reasoning) < 200:
                 print(f"   {reasoning}")
             else:
                 print(f"   {reasoning[:200]}...")
-        
+
         # Store tool calls for later display with their results
-        if hasattr(response, 'tool_calls') and response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
             for tc in response.tool_calls:
-                call_id = tc.id if hasattr(tc, 'id') else tc.get('id')
+                call_id = tc.id if hasattr(tc, "id") else tc.get("id")
                 self._pending_tool_calls[call_id] = tc
             return
-        
+
         # Otherwise try to parse the content as JSON
         try:
             parsed = json.loads(response.content)
@@ -125,7 +124,7 @@ class ConsoleTracer:
 
         # Look up the original tool call to show signature
         tool_call = self._pending_tool_calls.get(call_id) if call_id else None
-        
+
         if tool_call:
             # Show tool call signature
             call_sig = self._format_tool_call(tool_call)
@@ -325,7 +324,7 @@ class ConsoleTracer:
         Examples:
             calculator(operation="add", x=5, y=3)  # Pythonic
             calculator({'operation': 'add', ...})  # plain_json mode
-        
+
         Args:
             tool_call: Either a dict or a ToolCall object
         """

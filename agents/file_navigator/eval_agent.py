@@ -64,7 +64,7 @@ def run_eval(
         model_name=model_name or agent_config.model_name,
         api_key=agent_config.api_key,
         temperature=agent_config.temperature,
-        max_tokens=agent_config.max_tokens,
+        max_tokens=1500,  # Override config - need sufficient tokens for complete responses
     )
 
     # Agent init with mock tools
@@ -74,6 +74,7 @@ def run_eval(
             create_tool(MockListDirectoryTool, dependencies={"filesystem": filesystem}),
             create_tool(CalculatorTool),
         ],
+        max_turns=15,  # Match integration test
         observers=[ConsoleTracer(verbose=verbose)],
     )
 

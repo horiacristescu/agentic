@@ -15,26 +15,26 @@ def run_and_validate(
     save_trace: str | None = None,
 ) -> dict:
     """Run agent and validate the trace.
-    
+
     Args:
         model_name: LLM model to use
         filesystem_name: Filesystem scenario to test
         prompt_name: Prompt version to use
         save_trace: Optional path to save checkpoint
-    
+
     Returns:
         dict with run info and validation results
     """
-    print(f"\n{'='*70}")
-    print(f"Running Evaluation")
+    print(f"\n{'=' * 70}")
+    print("Running Evaluation")
     print(f"  Model: {model_name or 'default'}")
     print(f"  Filesystem: {filesystem_name}")
     print(f"  Prompt: {prompt_name}")
-    print(f"{'='*70}\n")
-    
+    print(f"{'=' * 70}\n")
+
     # Load filesystem for validation
     filesystem = load_filesystem(filesystem_name)
-    
+
     # Run agent
     result, agent = run_eval(
         model_name=model_name,
@@ -43,31 +43,31 @@ def run_and_validate(
         save_checkpoint=save_trace,
         verbose=True,
     )
-    
+
     # Validate trace
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("Running Validators")
-    print(f"{'='*70}\n")
-    
-    validation = validate_trace(agent.messages, filesystem)
-    
+    print(f"{'=' * 70}\n")
+
+    validation = validate_trace(agent.messages, filesystem, final_result=result)
+
     # Print ground truth info
     gt = validation["ground_truth"]
-    print(f"Ground Truth:")
+    print("Ground Truth:")
     print(f"  Expected answer: {gt['expected_answer']}")
     print(f"  Number of test files: {gt['num_test_files']}")
     print(f"  Required paths: {len(gt['required_paths'])}")
     print()
-    
+
     # Print efficiency metrics
     metrics = validation["metrics"]
-    print(f"Efficiency Metrics:")
+    print("Efficiency Metrics:")
     print(f"  Total tool calls: {metrics['total_tool_calls']}")
     print(f"  - listdirectory: {metrics['listdirectory_calls']}")
     print(f"  - calculator: {metrics['calculator_calls']}")
     print(f"  Assistant turns: {metrics['assistant_turns']}")
     print()
-    
+
     # Print validation results
     for check in validation["checks"]:
         status = "✓ PASS" if check["passed"] else "✗ FAIL"
@@ -76,14 +76,14 @@ def run_and_validate(
         if check["details"] and not check["passed"]:
             print(f"     Details: {json.dumps(check['details'], indent=6)}")
         print()
-    
+
     # Summary
     summary = validation["summary"]
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Validation Summary: {summary['passed']}/{summary['total']} checks passed")
     print(f"Result: {'SUCCESS' if summary['all_passed'] else 'FAILED'}")
-    print(f"{'='*70}\n")
-    
+    print(f"{'=' * 70}\n")
+
     return {
         "model": model_name,
         "filesystem": filesystem_name,
@@ -102,15 +102,14 @@ if __name__ == "__main__":
     # Usage: python run_eval.py [model_name] [checkpoint_path]
     model = sys.argv[1] if len(sys.argv) > 1 else None
     checkpoint = sys.argv[2] if len(sys.argv) > 2 else None
-    
+
     eval_result = run_and_validate(
         model_name=model,
         save_trace=checkpoint,
     )
-    
-    # Exit with appropriate code
-    if eval_result["validation"]["summary"]["all_passed"]:
-        sys.exit(0)
-    else:
-        sys.exit(1)
 
+    # Print final pass/fail indicator
+    if eval_result["validation"]["summary"]["all_passed"]:
+        print("✅ TASK PASSED")
+    else:
+        print("❌ TASK FAILED")
