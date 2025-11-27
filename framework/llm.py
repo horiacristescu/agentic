@@ -80,6 +80,9 @@ class LLM:
             content = response.choices[0].message.content
             message_obj = response.choices[0].message
 
+            # Save original content before any conversion for debugging
+            original_content = content
+
             # Some models (Grok, GPT-4) use OpenAI's native tool_calls format instead of
             # putting JSON in the content. We normalize everything to JSON-in-content.
             if (
@@ -123,6 +126,16 @@ class LLM:
                     timestamp=time.time(),
                     tokens_in=response.usage.prompt_tokens,
                     tokens_out=response.usage.completion_tokens,
+                    metadata={
+                        "raw_content": original_content,
+                        "finish_reason": finish_reason,
+                        "model": response.model,
+                        "usage": {
+                            "prompt_tokens": response.usage.prompt_tokens,
+                            "completion_tokens": response.usage.completion_tokens,
+                            "total_tokens": response.usage.total_tokens,
+                        },
+                    },
                 )
 
             # Empty response - API succeeded but returned no content
@@ -155,12 +168,23 @@ class LLM:
             cleaned_content = self._clean_markdown_response(content)
 
             # Normal successful response
+            # Attach raw response metadata for debugging tool parsing errors
             response_message = Message(
                 role="assistant",
                 content=cleaned_content,
                 timestamp=time.time(),
                 tokens_in=response.usage.prompt_tokens,
                 tokens_out=response.usage.completion_tokens,
+                metadata={
+                    "raw_content": original_content,  # Original before any conversion
+                    "finish_reason": finish_reason,
+                    "model": response.model,
+                    "usage": {
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                    },
+                },
             )
             return response_message
         except AuthenticationError as e:
