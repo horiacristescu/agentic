@@ -1,0 +1,36 @@
+{
+  "framework": {
+    "agents.py": 18104,
+    "config.py": 1851,
+    "errors.py": 4541,
+    "llm.py": 5427,
+    "messages.py": 2945,
+    "observers.py": 991,
+    "tools.py": 2963,
+    "tests": {
+      "README.md": 181,
+      "manual_test_error_messages.py": 3480,
+      "integration": {
+        "__init__.py": 63,
+        "test_agent_integration.py": 2753,
+        "test_llm_errors_integration.py": 2269,
+        "test_llm_integration.py": 3923,
+        "test_multi_model_compatibility.py": 7152,
+        "test_openai_contract.py": 9907
+      },
+      "unit": {
+        "__init__.py": 59,
+        "test_agent_error_handling.py": 4703,
+        "test_agent_semantic_errors.py": 3690,
+        "test_error_classification.py": 4574,
+        "test_llm_error_handling.py": 6288,
+        "test_llm_semantic_errors.py": 3545,
+        "test_llm_transient_errors.py": 4225,
+        "test_response_parsing.py": 9700,
+        "test_tool_error_messages.py": 5847,
+        "test_tool_unit.py": 3255
+      }
+    }
+  }
+}
+

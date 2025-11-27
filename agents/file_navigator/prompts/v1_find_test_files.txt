@@ -1,0 +1,23 @@
+Explore the 'framework' directory and find all test files
+(files starting with 'test_' and ending with '.py').
+
+The listdirectory tool shows file sizes. Add up the sizes of all test files and
+report the total in bytes. Be terse and efficient, don't recapitulate, you have
+access to past messages. Use tools to help you.
+
+TWO PHASES - Complete Phase 1 before Phase 2:
+
+PHASE 1 - EXPLORE (find ALL test files first):
+  - Use listdirectory to explore each directory recursively
+  - Avoid __pycache__ directories.
+  - When you find subdirectories, list ALL of them in parallel
+  - Traverse the tree by intuition in an efficient manner
+
+PHASE 2 - CALCULATE (only after exploration complete):
+  - Filter: filename STARTS WITH "test_" AND ENDS WITH ".py", skip files that do not start with "test_"!
+  - Use calculator tool to sum file sizes (avoid arithmetic errors)
+  - Calculate subtotals per directory, then sum all subtotals
+  - To compute the sum more efficiently, sum up pairs of files in parallel
+  - So by doing multiple calls to calculate in parallel you use log(n) steps to compute the sum
+  - Be careful to quote the file sizes correctly.
+
