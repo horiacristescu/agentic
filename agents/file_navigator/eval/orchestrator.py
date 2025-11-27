@@ -1,8 +1,8 @@
-"""File Navigator Agent with Mock Filesystem for Evaluation."""
+"""File Navigator Agent Orchestrator - Runs agent with mock filesystem."""
 
 from pathlib import Path
 
-from agentic.agents.file_navigator.mock_tools import MockListDirectoryTool, load_filesystem
+from agentic.agents.file_navigator.eval.mock_tools import MockListDirectoryTool, load_filesystem
 from agentic.framework.agents import Agent
 from agentic.framework.config import get_config
 from agentic.framework.llm import LLM
