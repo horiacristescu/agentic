@@ -222,6 +222,8 @@ class Agent:
                 turn=self.turn_count,
                 messages=self.messages,
                 model=self.llm.model_name,
+                temperature=self.llm.temperature,
+                json_mode=self.llm.json_mode,
             )
 
             agent_response = self._get_agent_response(self.messages)

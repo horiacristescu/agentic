@@ -21,11 +21,24 @@ class ConsoleTracer:
         self._seen_system_prompt = False
         self._pending_tool_calls: dict[str, ToolCall | dict] = {}  # Map call_id -> tool_call
 
-    def on_turn_start(self, turn: int, messages: list[Message], model: str | None = None) -> None:
+    def on_turn_start(
+        self,
+        turn: int,
+        messages: list[Message],
+        model: str | None = None,
+        temperature: float | None = None,
+        json_mode: bool | None = None,
+    ) -> None:
         """Print turn header and initial messages on turn 1"""
-        # Print model name on first turn
+        # Print model info on first turn
         if turn == 1 and model:
-            print(f"\n🤖 Model: {model}")
+            info_parts = [f"🤖 Model: {model}"]
+            if temperature is not None:
+                info_parts.append(f"Temperature: {temperature}")
+            if json_mode is not None:
+                json_status = "enabled" if json_mode else "disabled"
+                info_parts.append(f"JSON mode: {json_status}")
+            print("\n" + " | ".join(info_parts))
 
         print(f"\n🔄 Turn {turn}")
 

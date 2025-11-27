@@ -90,3 +90,6 @@ testpaths = ["framework/tests", "agents"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: marks tests as integration tests (require API keys, network access)",
+]

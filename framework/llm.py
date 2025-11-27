@@ -39,22 +39,36 @@ from agentic.framework.messages import ErrorCode, Message
 
 class LLM:
     def __init__(
-        self, model_name: str, api_key: str, temperature: float = 0.0, max_tokens: int = 1000
+        self,
+        model_name: str,
+        api_key: str,
+        temperature: float = 0.0,
+        max_tokens: int = 1000,
+        json_mode: bool = False,
     ):
         self.model_name = model_name
         self.model = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.json_mode = json_mode
 
     def call(self, messages: list[Message]) -> Message:
         try:
             api_messages = [self._to_api_format(msg) for msg in messages]
-            response = self.model.chat.completions.create(
-                model=self.model_name,
-                messages=api_messages,  # type: ignore[arg-type]
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
+
+            # Build request kwargs
+            kwargs = {
+                "model": self.model_name,
+                "messages": api_messages,  # type: ignore[arg-type]
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+            }
+
+            # Enable JSON mode if requested (OpenAI/OpenRouter standard)
+            if self.json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+
+            response = self.model.chat.completions.create(**kwargs)
 
             # Validate response structure (Category A - provider contract violation)
             if not hasattr(response, "choices") or not response.choices:

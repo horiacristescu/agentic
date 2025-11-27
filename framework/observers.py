@@ -11,7 +11,14 @@ class AgentObserver(Protocol):
     All methods are optional (duck typing).
     """
 
-    def on_turn_start(self, turn: int, messages: list[Message]) -> None:
+    def on_turn_start(
+        self,
+        turn: int,
+        messages: list[Message],
+        model: str | None = None,
+        temperature: float | None = None,
+        json_mode: bool | None = None,
+    ) -> None:
         """Called at start of each agent turn"""
         ...
 
