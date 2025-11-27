@@ -1,6 +1,7 @@
 import json
+from typing import Any
 
-from agentic.framework.messages import Message
+from agentic.framework.messages import Message, ToolCall
 
 
 class ConsoleTracer:
@@ -19,9 +20,14 @@ class ConsoleTracer:
         self.show_system_prompt = show_system_prompt
         self.plain_json = plain_json
         self._seen_system_prompt = False
+        self._pending_tool_calls: dict[str, ToolCall | dict] = {}  # Map call_id -> tool_call
 
-    def on_turn_start(self, turn: int, messages: list[Message]) -> None:
+    def on_turn_start(self, turn: int, messages: list[Message], model: str | None = None) -> None:
         """Print turn header and initial messages on turn 1"""
+        # Print model name on first turn
+        if turn == 1 and model:
+            print(f"\n🤖 Model: {model}")
+        
         print(f"\n🔄 Turn {turn}")
 
         # On first turn, show system prompt and user input
@@ -45,24 +51,52 @@ class ConsoleTracer:
                 print(f"\n📥 User Input: {messages[-1].content}")
 
     def on_llm_response(self, turn: int, response: Message) -> None:
-        """Parse and show agent's reasoning and plan"""
-        try:
-            parsed = json.loads(response.content)
-
+        """Parse and show agent's reasoning and plan (but not tool calls - they're shown with results)"""
+        # Show reasoning if available (from metadata or parsed content)
+        reasoning = None
+        if response.metadata and "reasoning" in response.metadata:
+            reasoning = response.metadata["reasoning"]
+        elif hasattr(response, 'tool_calls') and not response.tool_calls:
+            # Try to parse content for reasoning if no tool_calls
+            try:
+                parsed = json.loads(response.content)
+                reasoning = parsed.get("reasoning")
+            except json.JSONDecodeError:
+                pass
+        
+        if self.verbose and reasoning:
             print("\n💭 Agent Reasoning:")
-            reasoning = parsed.get("reasoning", "No reasoning provided")
-            # Show full or truncated based on verbose
-            if self.verbose or len(reasoning) < 200:
+            if len(reasoning) < 200:
                 print(f"   {reasoning}")
             else:
                 print(f"   {reasoning[:200]}...")
+        
+        # Store tool calls for later display with their results
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            for tc in response.tool_calls:
+                call_id = tc.id if hasattr(tc, 'id') else tc.get('id')
+                self._pending_tool_calls[call_id] = tc
+            return
+        
+        # Otherwise try to parse the content as JSON
+        try:
+            parsed = json.loads(response.content)
 
-            # Show tool calls if any
+            # Show reasoning
+            if self.verbose and parsed.get("reasoning"):
+                print("\n💭 Agent Reasoning:")
+                reasoning = parsed["reasoning"]
+                if len(reasoning) < 200:
+                    print(f"   {reasoning}")
+                else:
+                    print(f"   {reasoning[:200]}...")
+
+            # Store tool calls if any (don't display yet)
             if parsed.get("tool_calls"):
-                print(f"\n🔧 Tool Calls ({len(parsed['tool_calls'])}):")
-                for i, tc in enumerate(parsed["tool_calls"], 1):
-                    call_str = self._format_tool_call(tc)
-                    print(f"   {i}. {call_str}")
+                for tc in parsed["tool_calls"]:
+                    call_id = tc.get("id", "")
+                    if call_id:
+                        self._pending_tool_calls[call_id] = tc
 
             # Show if finished
             if parsed.get("is_finished"):
@@ -73,22 +107,40 @@ class ConsoleTracer:
         except json.JSONDecodeError:
             # Fallback if response isn't valid JSON
             print("\n⚠️  Raw Response (non-JSON):")
-            print(f"   {response.content[:200]}...")
+            if self.verbose:
+                # Show more in verbose mode for debugging
+                if len(response.content) > 1000:
+                    print(f"   {response.content[:1000]}...")
+                    print(f"   ... ({len(response.content)} chars total)")
+                else:
+                    print(f"   {response.content}")
+            else:
+                print(f"   {response.content[:200]}...")
 
     def on_tool_execution(self, turn: int, tool_name: str, result: Message) -> None:
-        """Show tool execution results"""
-        # Try to get call ID and status
+        """Show tool call with its result paired together"""
+        # Get call ID and status
         call_id = getattr(result, "tool_call_id", None)
         error_code = getattr(result, "error_code", None)
 
-        # Format with call ID if available
-        prefix = f"[{call_id}] " if call_id else ""
-
-        if error_code:
-            print(f"\n❌ {prefix}{tool_name} → ERROR: {result.content}")
+        # Look up the original tool call to show signature
+        tool_call = self._pending_tool_calls.get(call_id) if call_id else None
+        
+        if tool_call:
+            # Show tool call signature
+            call_sig = self._format_tool_call(tool_call)
+            print(f"\n📎 {call_sig}")
+            # Clean up - we've shown this call
+            del self._pending_tool_calls[call_id]
         else:
-            # Show full tool result
-            print(f"\n📎 {prefix}{tool_name}")
+            # Fallback if we don't have the call (shouldn't happen)
+            prefix = f"[{call_id}] " if call_id else ""
+            print(f"\n📎 {prefix}{tool_name}(...)")
+
+        # Show result or error
+        if error_code:
+            print(f"   ❌ ERROR: {result.content}")
+        else:
             print(f"   {result.content}")
 
     def on_finish(self, final_result: Message, all_messages: list[Message]) -> None:
@@ -266,17 +318,27 @@ class ConsoleTracer:
 
         return f"{tool_name}({', '.join(params)})"
 
-    def _format_tool_call(self, tool_call: dict) -> str:
+    def _format_tool_call(self, tool_call: dict | ToolCall) -> str:
         """
         Format tool call in Pythonic style
 
         Examples:
             calculator(operation="add", x=5, y=3)  # Pythonic
             calculator({'operation': 'add', ...})  # plain_json mode
+        
+        Args:
+            tool_call: Either a dict or a ToolCall object
         """
-        tool_name = tool_call.get("tool", "unknown")
-        args = tool_call.get("args", {})
-        call_id = tool_call.get("id", "")
+        # Handle both dict and ToolCall objects
+        if isinstance(tool_call, dict):
+            tool_name = tool_call.get("tool", "unknown")
+            args = tool_call.get("args", {})
+            call_id = tool_call.get("id", "")
+        else:
+            # Pydantic ToolCall object
+            tool_name = getattr(tool_call, "tool", "unknown")
+            args = getattr(tool_call, "args", {})
+            call_id = getattr(tool_call, "id", "")
 
         if self.plain_json:
             # Show raw JSON format

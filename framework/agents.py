@@ -217,7 +217,7 @@ class Agent:
         while self.turn_count < self.max_turns:
             self.turn_count += 1
 
-            self._notify("on_turn_start", turn=self.turn_count, messages=self.messages)
+            self._notify("on_turn_start", turn=self.turn_count, messages=self.messages, model=self.llm.model_name)
 
             agent_response = self._get_agent_response(self.messages)
             if agent_response.status != ResultStatus.SUCCESS:
@@ -290,6 +290,10 @@ class Agent:
                     content=agent_response.metadata["raw_response"],
                     tool_calls=agent_response.metadata.get("tool_calls"),
                     timestamp=time.time(),
+                    metadata={
+                        "reasoning": agent_response.metadata.get("reasoning"),
+                        "is_finished": agent_response.metadata.get("is_finished"),
+                    },
                 )
             )
             self._notify("on_llm_response", turn=self.turn_count, response=self.messages[-1])
